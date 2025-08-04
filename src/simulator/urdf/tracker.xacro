@@ -1,0 +1,20 @@
+<?xml version="1.0" ?>
+
+<!-- Author: YueLin -->
+
+<robot name="differential" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <link name="tracker">
+        <visual>
+            <origin xyz="0 0 0.1" rpy="0 0 1.5707963267948966" />
+            <geometry>
+                <mesh filename="package://simulator/meshes/tracker.stl" 
+                      scale="0.005 0.005 0.005" />
+            </geometry>
+            <material name="white">
+                <color rgba="0.91 0.90 0.88 1" />
+            </material>
+        </visual>
+    </link>
+
+</robot>

@@ -1,0 +1,17 @@
+<?xml version="1.0" ?>
+
+<!-- Author: YueLin -->
+
+<robot name="omnidirectional" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <link name="target">
+        <visual>
+            <origin xyz="0 0 0.1" rpy="0 0 1.5707963267948966" />
+            <geometry>
+                <mesh filename="package://simulator/meshes/target.dae" 
+                      scale="0.25 0.2 0.2" />
+            </geometry>
+        </visual>
+    </link>
+
+</robot>
