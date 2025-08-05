@@ -98,14 +98,14 @@ namespace diff_track
         optimize();
         propagate();
 
-        std::cout << "Costs:"
-                  << "\nJa: " << costs[A]
-                  << "\nJd: " << costs[D]
-                  << "\nJo: " << costs[O]
-                  << "\nJc: " << costs[C]
-                  << "\nJf: " << costs[F]
-                  << "\nJs: " << costs[S]
-                  << std::endl;
+        // std::cout << "Costs:"
+        //           << "\nJa: " << costs[A]
+        //           << "\nJd: " << costs[D]
+        //           << "\nJo: " << costs[O]
+        //           << "\nJc: " << costs[C]
+        //           << "\nJf: " << costs[F]
+        //           << "\nJs: " << costs[S]
+        //           << std::endl;
 
         /* Get trajectory */
         trajectory.topRows(3) = pos;
@@ -184,7 +184,7 @@ namespace diff_track
         
         /* Calculate collision cost and its gradient */
         for(int t = 0; t < n; t++)
-            if((j = 2 * radius - map->esdf(pos.col(t + 1).head(2), grad)) > 0)
+            if((j = radius - map->esdf(pos.col(t + 1).head(2), grad)) > 0)
             {
                 costs[C] += lambda[C] * j * j;
                 gradient.col(t).head(2) -= 2 * lambda[C] * j * grad;

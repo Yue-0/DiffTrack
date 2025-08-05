@@ -22,8 +22,6 @@ namespace diff_track
         msg.data.resize(map->cols * map->rows);
     }
 
-    inline double hypot2(double x, double y) {return x * x + y * y;}
-
     void Map::update(nav_msgs::msg::OccupancyGrid::SharedPtr grid)
     {
         /* Initialize map */
@@ -33,6 +31,7 @@ namespace diff_track
             for(int x = 0; x < map->cols; x++)
                 map->at<uchar>(y, x) = grid->data[x + z]? 0: 0xFF;
         }
+        cv::rectangle(*map, cv::Rect(0, 0, map->cols, map->rows), 0, 1);
 
         /* Initialize ESDF */
         cv::distanceTransform(
@@ -69,7 +68,7 @@ namespace diff_track
         /* Update map */
         robot.x = std::round(self.x() * r) + offset.width;
         robot.y = std::round(self.y() * r) + offset.height;
-        for(double angle = -fov; angle <= fov; angle += deg2rad)
+        for(double angle = deg2rad - fov; angle < fov; angle += deg2rad)
         {
             bool obstacle = false;
             double theta = angle + yaw;
@@ -95,7 +94,7 @@ namespace diff_track
         {
             point.x = std::round(filter.x() * r) + offset.width;
             point.y = std::round(filter.y() * r) + offset.height;
-            cv::circle(*map, point, std::round(filter.z() * r), 0xFF, -1);
+            cv::circle(*map, point, std::round(2 * filter.z() * r), 0xFF, -1);
         }
         
         /* Update ESDF */

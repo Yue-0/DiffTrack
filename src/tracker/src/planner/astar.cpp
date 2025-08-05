@@ -69,7 +69,6 @@ namespace diff_track
         }
 
         /* Planning failed */
-        std::cout << "Planning failed" << std::endl;
         return false;
     }
 
