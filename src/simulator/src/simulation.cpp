@@ -107,7 +107,13 @@ Simulator::Simulator(std::string name): Node(name)
     goal = create_subscription<geometry_msgs::msg::PoseStamped>(
         "/goal_pose", 1, 
         [this](const geometry_msgs::msg::PoseStamped::SharedPtr goal){
-            planner->plan(goal->pose.position.x, goal->pose.position.y);
+            planner->plan(goal->pose);
+        }
+    );
+    rnd = create_subscription<geometry_msgs::msg::PointStamped>(
+        "/clicked_point", 1, 
+        [this](const geometry_msgs::msg::PointStamped::SharedPtr){
+            moving = !moving;
         }
     );
 
@@ -122,6 +128,14 @@ Simulator::Simulator(std::string name): Node(name)
     ms = 1e3 / declare_parameter<double>("tracker.fps");
     detection = create_wall_timer(std::chrono::milliseconds(ms), [this](){
         detector->publish(*env->detect(angle, range));
+    });
+
+    /* Random movement of the target */
+    move = create_wall_timer(std::chrono::milliseconds(ms), [this](){
+        if(moving && 1e-2 > std::fabs(env->target.vel.yaw) + hypot2(
+            env->target.vel.x, env->target.vel.y
+        ))
+            planner->plan(map->goal(rclcpp::Clock().now().seconds()));
     });
 
     /* Publish map */

@@ -15,9 +15,11 @@ namespace sim
     }
 
     Planner::Planner(Robot* r, RandomMap* m, double t, double v, double a):
-        robot(r), map(m), time(t), vm(v), vm2(v * v), am2(a * a), sample(v * t)
+        robot(r), map(m), 
+        time(t), ds(r->radius * 2), 
+        vm(v), vm2(v * v), am2(a * a), sample(v * t)
     {
-        ds = r->radius * 2;
+        wm = v * SQR2;
 
         /* For A* algorithm */
         rows = m->rows();
@@ -35,84 +37,110 @@ namespace sim
         pf.resize(PAST);
         limit.resize(MEMORY);
         memory.resize(MEMORY);
-    }
-
-    void Planner::plan(double xg, double yg)
-    {
-        /* Path search */
-        Eigen::Matrix2Xd path = search(
-            tf(xg, yg), tf(robot->pose.x, robot->pose.y)
-        );
-
-        /* Trajectory optimization */
-        if(path.cols() > 1)
-        {
-            path(0, 0) = robot->pose.x;
-            path(1, 0) = robot->pose.y;
-            path(0, path.cols() - 1) = xg;
-            path(1, path.cols() - 1) = yg;
-            optimize(path = bspline(path));
-        }
-        
-        /* Convert to ROS message */
-        message(path);
-    }   
+    }  
 
     geometry_msgs::msg::Twist Planner::control()
     {
         /* Initialize */
         geometry_msgs::msg::Twist v;
-        v.linear.x = v.linear.y = v.angular.z = 0;
-        if(msg.poses.empty()) return v;
+        v.linear.x = v.linear.y = 0;
+        if(msg.poses.empty())
+        {
+            if(!std::isinf(orientation))
+                v.angular.z = wm * std::tanh(normalize(
+                    orientation - robot->pose.yaw
+                ));
+            return v;
+        }
 
-        /* Get next pose */
+        /* Get next position */
         double x = msg.poses.back().pose.position.x;
         double y = msg.poses.back().pose.position.y;
-        double yaw = std::atan2(y - robot->pose.y, x - robot->pose.x);
+
+        /* Calculate next yaw */
+        if(!*closed && !std::isinf(orientation))
+            *closed = wm * time * msg.poses.size()
+                    < std::fabs(normalize(orientation - robot->pose.yaw));
+        double yaw = *closed? orientation: std::atan2(
+            y - robot->pose.y, x - robot->pose.x
+        );
         
-        /* Calculate velocity */
-        const double wm = vm * SQR2;
+        /* Calculate angular velocity */
         v.angular.z = normalize(yaw - robot->pose.yaw) / time;
         if(std::fabs(v.angular.z) >= wm)
+        {
             v.angular.z = std::copysign(wm, v.angular.z);
+            yaw = normalize(robot->pose.yaw + v.angular.z * time);
+        }
+        
+        /* Calculate linear velocity */
+        double sin, cos, det;
+        double dx = x - robot->pose.x;
+        double dy = y - robot->pose.y;
+        if(std::fabs(v.angular.z) < 1e-2)
+        {
+            det = 1. / time;
+            sin = std::sin(robot->pose.yaw);
+            cos = std::cos(robot->pose.yaw);
+        }
         else
         {
-            double sin, cos, det;
-            double dx = x - robot->pose.x;
-            double dy = y - robot->pose.y;
-            if(std::fabs(v.angular.z) < 1e-2)
-            {
-                det = 1. / time;
-                sin = std::sin(robot->pose.yaw);
-                cos = std::cos(robot->pose.yaw);
-            }
-            else
-            {
-                sin = (std::cos(robot->pose.yaw) - std::cos(yaw)) / v.angular.z;
-                cos = (std::sin(yaw) - std::sin(robot->pose.yaw)) / v.angular.z;
-                det = 1. / (sin * sin + cos * cos);
-            }
-            v.linear.x = (dx * cos + dy * sin) * det;
-            v.linear.y = (dy * cos - dx * sin) * det;
-
-            /* Check feasibility */
-            bool feasible = true;
-            if(std::fabs(v.linear.x) > vm)
-            {
-                feasible = false;
-                v.linear.y *= std::fabs(vm / v.linear.x);
-                v.linear.x = std::copysign(vm, v.linear.x);
-            }
-            if(std::fabs(v.linear.y) > vm)
-            {
-                feasible = false;
-                v.linear.x *= std::fabs(vm / v.linear.y);
-                v.linear.y = std::copysign(vm, v.linear.y);
-            }
-            if(feasible)
-                msg.poses.pop_back();
+            sin = (std::cos(robot->pose.yaw) - std::cos(yaw)) / v.angular.z;
+            cos = (std::sin(yaw) - std::sin(robot->pose.yaw)) / v.angular.z;
+            det = 1. / (sin * sin + cos * cos);
         }
+        v.linear.x = (dx * cos + dy * sin) * det;
+        v.linear.y = (dy * cos - dx * sin) * det;
+
+        /* Check feasibility */
+        bool feasible = true;
+        if(std::fabs(v.linear.x) > vm)
+        {
+            feasible = false;
+            v.linear.y *= std::fabs(vm / v.linear.x);
+            v.linear.x = std::copysign(vm, v.linear.x);
+        }
+        if(std::fabs(v.linear.y) > vm)
+        {
+            feasible = false;
+            v.linear.x *= std::fabs(vm / v.linear.y);
+            v.linear.y = std::copysign(vm, v.linear.y);
+        }
+        if(feasible)
+            msg.poses.pop_back();
         return v;
+    }
+
+    void Planner::plan(const geometry_msgs::msg::Pose& goal)
+    {
+        /* Path search */
+        Eigen::Matrix2Xd path = search(
+            tf(goal.position.x, goal.position.y), 
+            tf(robot->pose.x, robot->pose.y)
+        );
+
+        /* Trajectory optimization */
+        if(path.cols() > 1)
+        {
+            path(0, path.cols() - 1) = goal.position.x;
+            path(1, path.cols() - 1) = goal.position.y;
+            path(0, 0) = robot->pose.x;
+            path(1, 0) = robot->pose.y;
+            path = bspline(path);
+            optimize(path);
+        }
+
+        /* Calculate yaw */
+        *closed = false;
+        orientation = quaternion2yaw(
+            goal.orientation.x,
+            goal.orientation.y,
+            goal.orientation.z,
+            goal.orientation.w
+        );
+        
+        /* Convert to ROS message */
+        message(path);
     }
 
     cv::Point Planner::bfs(const cv::Point& start)

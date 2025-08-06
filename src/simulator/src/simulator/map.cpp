@@ -60,6 +60,29 @@ namespace sim
         data *= resolution;
     }
 
+    geometry_msgs::msg::Pose RandomMap::goal(int seed) const
+    {
+        /* Generate random point */
+        cv::Point point;
+        std::srand(seed);
+        do
+        {
+            point.x = std::rand() % data.cols;
+            point.y = std::rand() % data.rows;
+        }
+        while(data.at<float>(point) <= 0);
+
+        /* Convert to PoseStamped */
+        geometry_msgs::msg::Pose pose;
+        pose.position.x = (point.x - offset.width) * resolution;
+        pose.position.y = (point.y - offset.height) * resolution;
+        pose.orientation.x = 0;
+        pose.orientation.y = 0;
+        pose.orientation.z = 0;
+        pose.orientation.w = 0;
+        return pose;
+    }
+
     nav_msgs::msg::OccupancyGrid* RandomMap::message(const std::string& frame)
     {
         msg.header.frame_id = frame;

@@ -29,5 +29,5 @@ simulation:
             fps: 10.0
             fov: 135.0
             range: 6.0
-            radius: 0.1
+            radius: 0.15
             name: "tracker"

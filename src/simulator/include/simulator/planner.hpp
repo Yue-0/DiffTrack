@@ -1,6 +1,5 @@
 /* @author: YueLin */
 
-#include <limits>
 #include <vector>
 
 #include <Eigen/Eigen>
@@ -15,7 +14,7 @@ namespace sim
         private:
             Robot* robot;
             RandomMap* map;
-            double time, ds, vm, vm2, am2, sample;
+            double time, ds, vm, wm, vm2, am2, sample, orientation;
 
             /* ROS message */
             nav_msgs::msg::Path msg;
@@ -25,7 +24,6 @@ namespace sim
             int* parent;
             bool* closed;
             int rows, cols;
-            const double INF = std::numeric_limits<double>::infinity();
 
             /* For B-spline parameterization */
             Eigen::Vector3d dp, dv, da;
@@ -53,14 +51,14 @@ namespace sim
             Planner(Robot*, RandomMap*, double, double, double);
 
         public:
-            void plan(double, double);
-
             geometry_msgs::msg::Twist control();
             
             nav_msgs::msg::Path* message(const std::string& frame) 
             {
                 msg.header.frame_id = frame; return &msg;
             }
+
+            void plan(const geometry_msgs::msg::Pose&);
 
         private:
             /* For path searching */

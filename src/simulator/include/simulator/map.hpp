@@ -4,7 +4,9 @@
 
 #include "opencv2/opencv.hpp"
 
+#include "geometry_msgs/msg/pose.hpp"
 #include "nav_msgs/msg/occupancy_grid.hpp"
+#include "geometry_msgs/msg/pose_stamped.hpp"
 
 namespace sim
 {
@@ -47,6 +49,8 @@ namespace sim
             {
                 return cv::LineIterator(data, p1, p2);
             }
+
+            geometry_msgs::msg::Pose goal(int) const;
             
             nav_msgs::msg::OccupancyGrid* message(const std::string&);
     };

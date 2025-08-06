@@ -5,6 +5,7 @@
 #include <rclcpp/rclcpp.hpp>
 
 #include "sensor_msgs/msg/point_cloud2.hpp"
+#include "geometry_msgs/msg/point_stamped.hpp"
 
 #include "simulator/env.hpp"
 #include "simulator/camera.hpp"
@@ -24,8 +25,8 @@ class Simulator: public rclcpp::Node
         std::unique_ptr<sim::Planner> planner;
 
         /* ROS */
-        rclcpp::TimerBase::SharedPtr timer, mapping, detection;
         std::unique_ptr<tf2_ros::TransformBroadcaster> broadcaster;
+        rclcpp::TimerBase::SharedPtr timer, mapping, detection, move;
 
         /* Publishers */
         rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr fov[2];
@@ -39,8 +40,10 @@ class Simulator: public rclcpp::Node
         /* Subscribers */
         rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr controller;
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goal;
+        rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr rnd;
 
         /* Messages */
+        bool moving = false;
         nav_msgs::msg::OccupancyGrid grid;
         sensor_msgs::msg::PointCloud2 scan;
         geometry_msgs::msg::TransformStamped transform;
