@@ -32,6 +32,7 @@ namespace diff_track
             const double o = 1e-16;
 
             /* Cost values */
+            bool vc;
             double time;
             Eigen::VectorXd costs;
             enum Cost {A = 0, D = 1, O = 2, C = 3, F = 4, S = 5};
@@ -40,7 +41,7 @@ namespace diff_track
             Eigen::VectorXd sin, cos;
             Eigen::MatrixXd trajectory;
             Eigen::Matrix2Xd vel, acc;
-            Eigen::Matrix3Xd pos;
+            Eigen::Matrix3Xd pos, reference;
 
             /* For gradients propagation */
             Eigen::MatrixXd gx2v, gy2v, gx2w, gy2w, gz2w;
@@ -68,7 +69,10 @@ namespace diff_track
             );
 
         public:
-            void clock(const double t) {time = t;}
+            void clock(const double t0) {time = t0;}
+
+            bool visibility()           {return vc;}
+            void visibility(bool value) {vc = value;}
 
             Eigen::MatrixXd control(const Eigen::VectorXd&, 
                                     const Eigen::MatrixXd&);
@@ -85,6 +89,12 @@ namespace diff_track
 
             /* Convergance test */
             inline bool convergance() const;
+
+            /* Get ESDF value and gradient */
+            inline double esdf(double, 
+                               Eigen::Vector2d&,
+                               const Eigen::VectorXd&, 
+                               const Eigen::VectorXd&) const;
 
             /* Lewis-Overton line search */
             inline bool search(double*, double*, const Eigen::VectorXd&);

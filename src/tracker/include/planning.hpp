@@ -35,7 +35,7 @@ class Tracker: public rclcpp::Node
         std::unique_ptr<diff_track::ModelPredictiveControl> mpc;
 
         /* Timer */
-        rclcpp::TimerBase::SharedPtr timer;
+        rclcpp::TimerBase::SharedPtr replan, controller;
 
         /* Publishers */
         rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr publisher;

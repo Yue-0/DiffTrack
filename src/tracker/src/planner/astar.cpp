@@ -18,7 +18,7 @@ namespace diff_track
     HybridAStar::HybridAStar(Map* world, 
                              Bezier* prediction,
                              int angle, int num, 
-                             double r, double t, 
+                             double range, double r, double t, 
                              double max_vel, double max_omega,
                              double distance, double e, double tau)
     :   map(world),
@@ -26,8 +26,9 @@ namespace diff_track
         angles(angle), radius(r),
         dt(t), vm(max_vel), wm(max_omega),
         dv(max_vel / num), dw(max_omega / num),
-        ob(distance), epsilon(e), duration(tau)
+        ob(distance), epsilon(e), duration(tau), reacquisition(-1)
     {
+        /* For A* search */
         size = angle
              * std::round(world->width / world->resolution)
              * std::round(world->height / world->resolution);
@@ -36,29 +37,77 @@ namespace diff_track
         parent = new int[size];
         time = new double[size];
         g = new double[size];
+
+        /* For target reacquisition */
+        int height = std::ceil(world->height / range);
+        int width = std::ceil(world->width / range);
+        double y0 = world->offset.height / height;
+        double x0 = world->offset.width / width;
+        for(int y = 0; y < height; y++)
+            for(int x = 0; x < width; x++)
+                points.emplace_back(x0 * (x * 2 + 1), y0 * (y * 2 + 1));
+        len = points.size();
+    }
+
+    Eigen::MatrixXd HybridAStar::reacquire(bool replan,
+                                           const Eigen::VectorXd& tracker)
+    {
+        /* Calculate the observation point */
+        Eigen::Vector3d goal;
+        if(replan)
+            --reacquisition;
+        if(reacquisition < 0)
+        {
+            reacquisition = 0;
+            goal.head(2) = bezier->derivative(bezier->duration);
+            goal.z() = std::atan2(goal.y(), goal.x());
+            goal.head(2) = bfs(bezier->get(bezier->duration));
+        }
+        else
+        {
+            if(!reacquisition)
+                len = dijkstra(map->encode(bfs(bezier->get(bezier->duration))));
+            goal.head(2) = bfs(map->decode(points[reacquisition++ % len]));
+            goal.z() = std::atan2(
+                goal.y() - tracker.y(), 
+                goal.x() - tracker.x()
+            );
+            if(reacquisition == len << 1)
+                reacquisition = len;
+        }
+
+        /* Search the trajectory */
+        Eigen::MatrixXd trajectory = search(tracker, nan, goal);
+        if(trajectory.cols())
+            trajectory.col(0) = tracker;
+        else
+            trajectory = tracker;
+        return trajectory;
     }
 
     bool HybridAStar::plan(Eigen::MatrixXd& trajectory,
                            const Eigen::VectorXd& tracker)
     {
-        /* Get predicted trajectory of the target */
-        Eigen::Matrix2Xd prediction = bezier->trajectory();
+        /* Get predicted position of the target */
+        Eigen::Vector2d prediction = bezier->get(bezier->duration);
 
         /* Check replan */
-        int n = prediction.cols();
-        if(visible(prediction.col(n - 1), trajectory.topRightCorner(3, 1)))
+        reacquisition = -1;
+        int n = bezier->n / 2 + 1;
+        if(visible(prediction, trajectory.topRightCorner(3, 1)))
             return false;
         
         /* Try to plan */
         while(n--)
         {
             /* Generate a proposal observation point */
-            Eigen::Vector3d goal = proposal(prediction.col(n), tracker.head(2));
+            prediction = bezier->get(n * bezier->time);
+            Eigen::Vector3d goal = proposal(prediction, tracker.head(2));
             
             /* Path search */
             if(!std::isinf(goal.z()))
             {
-                Eigen::MatrixXd path = search(tracker, prediction.col(n), goal);
+                Eigen::MatrixXd path = search(tracker, prediction, goal);
                 if(path.cols())
                 {
                     path.col(0) = tracker;
@@ -70,6 +119,56 @@ namespace diff_track
 
         /* Planning failed */
         return false;
+    }
+
+    int HybridAStar::dijkstra(const cv::Point& start)
+    {
+        /* Initialize */
+        int n = 0;
+        cv::Size sz = map->offset * 2;
+        const int num = points.size();
+        std::fill_n(g, sz.area(), inf);
+        std::fill_n(closed, sz.area(), false);
+        std::priority_queue<std::pair<double, int>> open;
+
+        /* Push the start point into the queue */
+        int index = map->encode(start);
+        open.push(std::make_pair(g[index] = 0, index));
+
+        /* Main loop */
+        while(!open.empty())
+        {
+            /* Dequeue a point */
+            index = open.top().second; open.pop();
+            cv::Point point = map->decode(index);
+            closed[index] = true;
+
+            /* Check the point */
+            for(int p = n; p < num; p++)
+                if(points[p] == point)
+                {
+                    points[p] = points[n];
+                    points[n] = point;
+                    if(++n == num)
+                        return n;
+                    break;
+                }
+
+            /* Expand the point */
+            for(cv::Point& neighbor: expand(sz, point))
+            {
+                if(map->at(neighbor) <= radius)
+                    continue;
+                double distance = g[index] + (
+                    (point - neighbor).dot(point - neighbor) == 1? 1: sqr
+                );
+                index = map->encode(neighbor);
+                if(distance < g[index])
+                    open.push(std::make_pair(-(g[index] = distance), index));
+            }
+        }
+
+        return n;
     }
 
     void HybridAStar::trigonometric(double angle)
@@ -108,7 +207,7 @@ namespace diff_track
         std::fill_n(closed, index, false);
 
         /* Push the first point into the queue */
-        index = sz.width * point.y + point.x;
+        index = map->encode(point);
         closed[index] = true;
         queue.push(index);
 
@@ -116,32 +215,19 @@ namespace diff_track
         while(!queue.empty())
         {
             /* Dequeue a point */
-            cv::Point p;
             index = queue.front(); queue.pop();
-            p.y = index / sz.width; p.x = index - p.y * sz.width;
+            cv::Point p = map->decode(index);
 
             /* Expand */
-            for(int dx = -1; dx <= 1; dx++)
+            for(cv::Point& neighbor: expand(sz, p))
             {
-                int x = p.x + dx;
-                if(x < 0 || x >= sz.width)
-                    continue;
-                for(int dy = -1; dy <= 1; dy++)
+                index = map->encode(neighbor);
+                if(!closed[index])
                 {
-                    int y = p.y + dy;
-                    if(y < 0 || y >= sz.height)
-                        continue;
-                    int idx = sz.width * y + x;
-                    if(!closed[idx])
-                    {
-                        if(map->at(cv::Point(x, y)) > radius)
-                            return Eigen::Vector2d(
-                                map->resolution * (x - map->offset.width),
-                                map->resolution * (y - map->offset.height)
-                            );
-                        closed[idx] = true;
-                        queue.push(idx);
-                    }
+                    if(map->at(neighbor) > radius)
+                        return map->decode(neighbor);
+                    queue.push(index);
+                    closed[index] = true;
                 }
             }
         }
@@ -152,17 +238,20 @@ namespace diff_track
                                         const Eigen::Vector2d& target,
                                         const Eigen::Vector3d& observation)
     {
-        /* Find a safe start point */
-        tracker.head(2) = bfs(tracker.head(2));
-
         /* Initialize */
+        const bool vis = !target.hasNaN();
+
+        /* Find a safe start point */
+        std::vector<Eigen::VectorXd> path = escape(tracker);
+        if(!path.empty()) tracker = path.front();
+        int index = hash(tracker.head(3));
+
+        /* Initialize queue and arrays */
         std::fill_n(g, size, inf);
         std::fill_n(closed, size, false);
-        std::vector<Eigen::VectorXd> path;
         std::priority_queue<std::pair<double, int>> open;
 
         /* Push the first point into the open set */
-        int index = hash(tracker.head(3)); 
         parent[index] = -1; 
         g[index] = time[index] = 0;
         states.col(index) = tracker;
@@ -181,54 +270,39 @@ namespace diff_track
             closed[index] = true;
 
             /* If found a path */
-            if(visible(target, states.col(index).head(3)))
-            {
-                states.col(index).tail(2).setZero();
+            if(
+                vis
+                ? visible(target, states.col(index).head(3))
+                : arrival(observation.head(2), states.col(index).head(2))
+            ){
                 do path.push_back(states.col(index));
                 while((index = parent[index]) != -1);
                 break;
             }
             
             /* Expand node */
-            trigonometric(states(2, index));
-            for(tracker[3] = -vm; tracker[3] <= vm; tracker[3] += dv)
+            for(Eigen::VectorXd& neighbor: expand(states.col(index)))
             {
-                double d = tracker[3] * dt;
-                for(tracker[4] = -wm; tracker[4] <= wm; tracker[4] += dw)
+                /* Check closed and collision */
+                int idx = hash(neighbor.head(3));
+                if(!closed[idx] && map->at(neighbor.head(2)) > radius)
                 {
-                    /* Calculate next state */
-                    tracker.head(2) = states.col(index).head(2) + d * trigon;
-                    tracker.z() = normalize(states(2, index) + dt * tracker[4]);
-
-                    /* Boundary check */
-                    if(2 * std::fabs(tracker.x()) > map->width || 
-                       2 * std::fabs(tracker.y()) > map->height) continue;
+                    /* Calculate cost */
+                    double value = std::fabs(neighbor[4]) * radius * dt
+                                 + std::fabs(neighbor[3]) * dt + g[index];
+                    if(neighbor[3] < 0 && 2 * bezier->duration < time[index])
+                        value -= neighbor[3] * dt;
                     
-                    /* Check closed and collision */
-                    int idx = hash(tracker.head(3));
-                    if(!closed[idx] && map->at(tracker.head(2)) >= radius)
+                    /* Update */
+                    if(value < g[idx])
                     {
-                        /* If backward, check exploration */
-                        if(d < 0 && !map->known(tracker.head(2)))
-                            continue;
-
-                        /* Calculate cost */
-                        double value = std::fabs(tracker[4]) * radius * dt
-                                     + std::fabs(d) + g[index];
-                        if(time[index] >= 1 && d < 0)
-                            value -= d;
-                        
-                        /* Update */
-                        if(value < g[idx])
-                        {
-                            g[idx] = value;
-                            parent[idx] = index;
-                            states.col(idx) = tracker;
-                            time[idx] = time[index] + dt;
-                            open.push(std::make_pair(-f(
-                                value, tracker.head(3), observation
-                            ), idx));
-                        }
+                        g[idx] = value;
+                        parent[idx] = index;
+                        states.col(idx) = neighbor;
+                        time[idx] = time[index] + dt;
+                        open.push(std::make_pair(-f(
+                            value, neighbor.head(3), observation
+                        ), idx));
                     }
                 }
             }
@@ -284,6 +358,83 @@ namespace diff_track
         return observation;
     }
 
+    std::vector<Eigen::VectorXd> HybridAStar::escape(Eigen::VectorXd state)
+    {
+        /* Check obstacle */
+        std::vector<Eigen::VectorXd> path;
+        if((*g = map->at(state.head(2))) > radius)
+            return path;
+        
+        /* Initialize queue and arrays */
+        std::queue<int> queue;
+        std::fill_n(closed, size, false);
+
+        /* Push the first point into the queue */
+        int idx = hash(state.head(3));
+        states.col(idx) = state;
+        closed[idx] = true;
+        parent[idx] = -1;
+        queue.push(idx);
+        g[idx] = *g;
+
+        /* BFS */
+        while(!queue.empty() && path.empty())
+        {
+            /* Dequeue a point */
+            int index = queue.front(); queue.pop();
+
+            /* Expand */
+            for(Eigen::VectorXd& neighbor: expand(states.col(index)))
+                if(!closed[idx = hash(neighbor.head(3))])
+                {
+                    parent[idx] = index;
+                    states.col(idx) = neighbor;
+                    g[idx] = map->at(neighbor.head(2));
+                    
+                    if(g[idx] > radius)
+                    {
+                        do path.push_back(states.col(idx));
+                        while((idx = parent[idx]) != -1);
+                        break;
+                    }
+                    else if(g[idx] >= g[index])
+                        queue.push(idx);
+                    
+                    closed[idx] = true;
+                }
+        }
+        return path;
+    }
+
+    std::vector<Eigen::VectorXd> HybridAStar::expand(const Eigen::VectorXd& s)
+    {
+        trigonometric(s.z());
+        Eigen::VectorXd state = s;
+        std::vector<Eigen::VectorXd> neighbors;
+        for(state[3] = vm; state[3] >= -vm; state[3] -= dv)
+        {
+            double d = state[3] * dt;
+            for(state[4] = -wm; state[4] <= wm; state[4] += dw)
+            {
+                /* Calculate next state */
+                state.head(2) = s.head(2) + d * trigon;
+                state.z() = normalize(s.z() + dt * state[4]);
+
+                /* Boundary check */
+                if(2 * std::fabs(state.x()) > map->width || 
+                   2 * std::fabs(state.y()) > map->height) continue;
+
+                /* Check backward */
+                if(d < 0 && !map->known(state.head(2))) 
+                    continue;
+                
+                /* Add to neighbors */
+                neighbors.push_back(state);
+            }
+        }
+        return neighbors;
+    }
+
     bool HybridAStar::occlusion(const Eigen::Vector2d& target,
                                 const Eigen::Vector2d& tracker)
     {
@@ -296,6 +447,32 @@ namespace diff_track
             if(map->at(line++.pos()) < d)
                 return true;
         return false;
+    }
+
+    std::vector<cv::Point> HybridAStar::expand(const cv::Size& bound,
+                                               const cv::Point& point)
+    {
+        std::vector<cv::Point> neighbors;
+        for(int dx = -1; dx <= 1; dx++)
+        {
+            int x = point.x + dx;
+            if(x < 0 || x >= bound.width)
+                continue;
+            for(int dy = -1; dy <= 1; dy++)
+            {
+                int y = point.y + dy;
+                if(y < 0 || y >= bound.height)
+                    continue;
+                neighbors.emplace_back(x, y);
+            }
+        }
+        return neighbors;
+    }
+
+    bool HybridAStar::arrival(const Eigen::Vector2d& target,
+                              const Eigen::Vector2d& tracker)
+    {
+        return (target - tracker).squaredNorm() < epsilon * epsilon;
     }
 
     bool HybridAStar::visible(const Eigen::Vector2d& target, 

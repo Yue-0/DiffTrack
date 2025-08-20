@@ -14,7 +14,7 @@ tracking:
             fov: 135.0
             range: 6.0
             radius: 0.15
-            max_vel: 1.7
+            max_vel: 2.0
             max_acc: 3.0
             max_omega: 1.2
             max_alpha: 2.0
@@ -30,7 +30,7 @@ tracking:
             lambda_a: 1e0
             lambda_d: 1e0
             lambda_o: 1e0
-            lambda_c: 1e4
+            lambda_c: 1e9
             lambda_f: 1e5
             lambda_s: 1e3
         

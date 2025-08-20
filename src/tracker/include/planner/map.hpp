@@ -52,6 +52,19 @@ namespace diff_track
             {
                 return cv::LineIterator(*map, p1, p2);
             }
+
+            cv::Point decode(int code) const
+            {
+                cv::Point point;
+                point.y = code / map->cols;
+                point.x = code - map->cols * point.y;
+                return point;
+            }
+
+            int encode(const cv::Point& point) const
+            {
+                return map->cols * point.y + point.x;
+            }
             
             cv::Point encode(const Eigen::Vector2d& point) const
             {
@@ -64,6 +77,14 @@ namespace diff_track
                         map->rows - 1.,
                         std::round(point.y() / resolution) + offset.height
                     ), 0.)
+                );
+            }
+
+            Eigen::Vector2d decode(const cv::Point& point) const
+            {
+                return Eigen::Vector2d(
+                    resolution * (point.x - offset.width),
+                    resolution * (point.y - offset.height)
                 );
             }
 

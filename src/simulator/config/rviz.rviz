@@ -6,8 +6,8 @@ Panels:
       Expanded:
         - /Global Options1
         - /Status1
+        - /Path3/Offset1
         - /Path4/Offset1
-        - /Path5/Offset1
       Splitter Ratio: 0.5
     Tree Height: 707
   - Class: rviz_common/Selection
@@ -31,7 +31,7 @@ Panels:
 Visualization Manager:
   Class: ""
   Displays:
-    - Alpha: 0.5
+    - Alpha: 0.25
       Cell Size: 1
       Class: rviz_default_plugins/Grid
       Color: 160; 160; 164
@@ -127,34 +127,6 @@ Visualization Manager:
         Value: /tracker/scan
       Use Fixed Frame: true
       Use rainbow: true
-      Value: true
-    - Alpha: 1
-      Buffer Length: 1
-      Class: rviz_default_plugins/Path
-      Color: 26; 95; 180
-      Enabled: true
-      Head Diameter: 0.30000001192092896
-      Head Length: 0.20000000298023224
-      Length: 0.30000001192092896
-      Line Style: Billboards
-      Line Width: 0.05000000074505806
-      Name: Path
-      Offset:
-        X: 0
-        Y: 0
-        Z: 0
-      Pose Color: 255; 85; 255
-      Pose Style: None
-      Radius: 0.029999999329447746
-      Shaft Diameter: 0.10000000149011612
-      Shaft Length: 0.10000000149011612
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        Filter size: 10
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /tracker/trajectory
       Value: true
     - Alpha: 1
       Buffer Length: 1

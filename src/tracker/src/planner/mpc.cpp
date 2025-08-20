@@ -45,6 +45,7 @@ namespace diff_track
         /* Initialize states */
         n = std::round(b->duration / t);
         trajectory.resize(5, n + 1);
+        reference.resize(3, n + 1);
         pos.resize(3, n + 1);
         vel.resize(2, n + 1);
         acc.resize(2, n);
@@ -91,13 +92,15 @@ namespace diff_track
         /* Initialize initial state */
         pos.col(0) = now.head(3);
         vel.col(0) = now.tail(2);
-
-        /* Optimization */
         x.head(n) = vel.topRightCorner(1, n).transpose();
         x.tail(n) = vel.bottomRightCorner(1, n).transpose();
-        optimize();
-        propagate();
 
+        /* Calculate reference trajectory */
+        if(!vc)
+            reference = (propagate(), pos);
+
+        /* Optimization */
+        optimize();
         // std::cout << "Costs:"
         //           << "\nJa: " << costs[A]
         //           << "\nJd: " << costs[D]
@@ -108,6 +111,7 @@ namespace diff_track
         //           << std::endl;
 
         /* Get trajectory */
+        propagate();
         trajectory.topRows(3) = pos;
         trajectory.bottomRows(2) = vel;
         return trajectory;
@@ -132,63 +136,76 @@ namespace diff_track
         gy2v.triangularView<Eigen::Lower>() = (dt * sin)
                                             . transpose()
                                             . replicate(n, 1);
-        for(int i = 1; i < n; i++)
+        for(int t = 1; t < n; t++)
         {
-            gx2w.row(i).head(i) = gx2w.row(i - 1).head(i) 
-                                - j * vel(0, i + 1) * sin.head(i).transpose();
-            gy2w.row(i).head(i) = gy2w.row(i - 1).head(i) 
-                                + j * vel(0, i + 1) * cos.head(i).transpose();
+            gx2w.row(t).head(t) = gx2w.row(t - 1).head(t) 
+                                - j * vel(0, t + 1) * sin.head(t).transpose();
+            gy2w.row(t).head(t) = gy2w.row(t - 1).head(t) 
+                                + j * vel(0, t + 1) * cos.head(t).transpose();
         }
 
         /* Visibility costs */
-        for(int t = 1; t <= n; t++)
-        {
-            /* Occlusion cost */
-            target = bezier->get(dt * t + time);
-            for(double k = kappa; k <= 1; k += kappa)
+        if(vc)
+            for(int t = 1; t <= n; t++)
             {
-                j = 2 * radius - map->esdf(
-                    k * pos.col(t).head(2) + (1 - k) * target, grad
-                );
-                if(j > 0)
-                {
-                    costs[C] += j;
-                    costs.tail(2) -= k * grad;
-                }
+                /* Occlusion cost */
+                target = bezier->get(dt * t + time);
+                for(double k = kappa; k <= 1; k += kappa)
+                    if((j = esdf(k, grad, pos.col(t), target) + radius) > 0)
+                    {
+                        costs[C] += j;
+                        costs.tail(2) -= k * grad;
+                    }
+                gradient.col(t - 1).head(2) += 2
+                                            * costs[C]
+                                            * lambda[O]  
+                                            * costs.tail(2);
+                costs[O] += lambda[O] * costs[C] * costs[C];
+                costs.tail(3).setZero();
+
+                /* Tracking distance cost */
+                target -= pos.col(t).head(2);
+                costs[D] += lambda[D] * td(target, grad);
+                gradient.col(t - 1).head(2) += lambda[D] * grad;
+
+                /* Calculate angle cost */
+                j = pos(2, t) - std::atan2(target.y(), target.x());
+                costs[A] += lambda[A] * (1 - std::cos(j));
+
+                /* Calculate gradient of angle cost w.r.t. yaw angle */
+                j = lambda[A] * std::sin(j);
+                gradient(2, t - 1) += j;
+
+                /* Calculate gradient of angle cost w.r.t. position */
+                j /= target.squaredNorm();
+                gradient(0, t - 1) += j * target.y();
+                gradient(1, t - 1) -= j * target.x();
             }
-            gradient.col(t - 1).head(2) += 2
-                                         * costs[C]
-                                         * lambda[O]  
-                                         * costs.tail(2);
-            costs[O] += lambda[O] * costs[C] * costs[C];
-            costs.tail(3).setZero();
-
-            /* Tracking distance cost */
-            target -= pos.col(t).head(2);
-            costs[D] += lambda[D] * td(target, grad);
-            gradient.col(t - 1).head(2) += lambda[D] * grad;
-
-            /* Calculate angle cost */
-            j = pos(2, t) - std::atan2(target.y(), target.x());
-            costs[A] += lambda[A] * (1 - std::cos(j));
-
-            /* Calculate gradient of angle cost w.r.t. yaw angle */
-            j = lambda[A] * std::sin(j);
-            gradient(2, t - 1) += j;
-
-            /* Calculate gradient of angle cost w.r.t. position */
-            j /= target.squaredNorm();
-            gradient(0, t - 1) += j * target.y();
-            gradient(1, t - 1) -= j * target.x();
+        
+        /* Reference path cost */
+        else
+        {
+            Eigen::Matrix3Xd err = (reference - pos).rightCols(n);
+            gradient.topRows(2) -= 2 * lambda[D] * err.topRows(2);
+            costs[D] = lambda[D] * err.topRows(2).squaredNorm();
+            costs[A] = lambda[A] * (n - err.row(2).array().cos().sum());
+            gradient.row(2) -= lambda[A] * err.row(2).array().sin().matrix();
         }
         
-        /* Calculate collision cost and its gradient */
+        /* Calculate collision cost and its gradient */ 
         for(int t = 0; t < n; t++)
-            if((j = radius - map->esdf(pos.col(t + 1).head(2), grad)) > 0)
-            {
-                costs[C] += lambda[C] * j * j;
-                gradient.col(t).head(2) -= 2 * lambda[C] * j * grad;
-            }
+        {
+            costs[S] = 1. * (n - t) / n;
+            for(double k = 0; k < 1; k += kappa)
+                if((j = esdf(k, grad, pos.col(t + 1), pos.col(t))) > 0)
+                {
+                    j *= costs[S];
+                    grad *= 2 * lambda[C] * j;
+                    costs[C] += lambda[C] * j * j;
+                    gradient.col(t).head(2) -= k * grad;
+                    if(t) gradient.col(t - 1).head(2) -= (1 - k) * grad;
+                }
+        }
 
         /* Calculate smoothness cost */
         Eigen::Matrix3Xd dp3 = pos.middleCols(1, n - 2) * 3
@@ -227,7 +244,7 @@ namespace diff_track
         }
 
         /* Acceleration cost */
-        for(int t = 1; t < n - 1; t++)
+        for(int t = n - 2; t; t--)
         {
             if((j = acc(0, t) * acc(0, t) - acc2) > 0)
             {
@@ -338,6 +355,14 @@ namespace diff_track
         return epsilon >= g.cwiseAbs().maxCoeff() / std::max(
             x.cwiseAbs().maxCoeff(), 1.
         );
+    }
+
+    double ModelPredictiveControl::esdf(double k,
+                                        Eigen::Vector2d& grad,
+                                        const Eigen::VectorXd& p1,
+                                        const Eigen::VectorXd& p2) const
+    {
+        return radius - map->esdf(k * p1.head(2) + (1 - k) * p2.head(2), grad);
     }
 
     bool ModelPredictiveControl::search(double* value, double* step,

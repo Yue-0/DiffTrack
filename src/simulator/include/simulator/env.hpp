@@ -42,7 +42,7 @@ namespace sim
             {
                 SE2 pose = tracker.pose;
                 step(target, dt); step(tracker, dt);
-                if(map->cost(tracker.pose.x, tracker.pose.y) < tracker.radius)
+                if(map->cost(tracker.pose.x, tracker.pose.y) < 0)
                     tracker.pose = pose;
             }
     };

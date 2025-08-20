@@ -90,7 +90,7 @@ Tracker::Tracker(std::string name): Node(name)
         get_parameter("planner.samples").as_int(),
         
         /* Robot settings */
-        tracker.z(), dt,
+        range, tracker.z(), dt,
 
         /* Motion constraints */
         get_parameter("tracker.max_vel").as_double(),
@@ -169,8 +169,9 @@ Tracker::Tracker(std::string name): Node(name)
             if(!(tigger & 1)) return;
             pcl::fromROSMsg(*pc, cloud);
             map->update(range, fov, state.z(), tracker, target, cloud);
-            mapper->publish(*map->message(message.header.frame_id, tracker.z()))
-            ;
+            mapper->publish(*map->message(
+                message.header.frame_id, tracker.z()
+            ));
             tigger |= 2;
         }
     );
@@ -197,9 +198,26 @@ Tracker::Tracker(std::string name): Node(name)
         std::bind(&Tracker::callback, this, std::placeholders::_1)
     );
 
-    /* Create timer for control */
-    int ms = 1e3 * dt;
-    timer = create_wall_timer(
+    /* Create timer for replanning */
+    int ms = 1e3 * bezier->time;
+    replan = create_wall_timer(std::chrono::milliseconds(ms), [this](){
+        if((tigger & 7) == 7 && 
+           pointer + 1 >= trajectory.cols() &&
+           bezier->duration < (rclcpp::Clock().now() - time).seconds())
+        {
+            pointer = 0;
+            twist.linear.x = 0;
+            twist.angular.z = 0;
+            cmd->publish(twist);
+            mpc->visibility(false);
+            state.tail(2).setZero();
+            trajectory = planner->reacquire(false, state);
+        }
+    });
+
+    /* Create controller */
+    ms = 1e3 * dt;
+    controller = create_wall_timer(
         std::chrono::milliseconds(ms), 
         std::bind(&Tracker::ctrl, this)
     );
@@ -224,12 +242,27 @@ void Tracker::ctrl()
         control = mpc->control(state, state);
 
     /* Publish velocity */
+    float d0 = map->at(control.col(0).head(2));
+    float d1 = map->at(control.col(1).head(2));
+    if(d1 <= 0 && d1 < d0)
+    {
+        control = mpc->control(state, state);
+        d1 = map->at(control.col(1).head(2));
+        if(d1 <= 0 && d1 < d0)
+            control.col(1).tail(2).setZero();
+    }
     state[3] = twist.linear.x = control(3, 1);
     state[4] = twist.angular.z = control(4, 1);
     cmd->publish(twist);
 
     /* Publish trajectory */
+    bool colussion = false;
     length = control.cols();
+    for(int p = 1; p < length; p++)
+        if((colussion = map->at(control.col(p).head(2)) < tracker.z()))
+        {
+            length = p; break;
+        }
     message.poses.resize(length);
     for(int p = 0; p < length; p++)
     {
@@ -239,6 +272,17 @@ void Tracker::ctrl()
         message.poses[p].pose.orientation.w = std::cos(control(2, p) / 2);
     }
     publisher->publish(message);
+
+    /* Replanning */
+    if(colussion && !mpc->visibility())
+    {
+        pointer = 0;
+        twist.linear.x = 0;
+        twist.angular.z = 0;
+        cmd->publish(twist);
+        state.tail(2).setZero();
+        trajectory = planner->reacquire(true, state);
+    }
 }
 
 void Tracker::callback(const nav_msgs::msg::Path::SharedPtr b)
@@ -265,6 +309,9 @@ void Tracker::callback(const nav_msgs::msg::Path::SharedPtr b)
     /* Path planning */
     if(planner->plan(trajectory, state))
         pointer = 0;
+
+    /* Set visibility of MPC */
+    mpc->visibility(true);
 }
 
 int main(int argc, char** argv)
