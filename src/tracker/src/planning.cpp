@@ -180,9 +180,9 @@ Tracker::Tracker(std::string name): Node(name)
     detect = create_subscription<geometry_msgs::msg::PoseStamped>(
         "/target/detection", 1, 
         [this](const geometry_msgs::msg::PoseStamped::SharedPtr detection){
+            tigger |= 4;
             if(detection->pose.orientation.w > 0)
             {
-                tigger |= 4;
                 target.x() = detection->pose.position.x;
                 target.y() = detection->pose.position.y;
                 target.z() = detection->pose.position.z * 1.5;
