@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include "opencv2/opencv.hpp"
+#include <opencv2/opencv.hpp>
 
 #include "geometry_msgs/msg/pose.hpp"
 #include "nav_msgs/msg/occupancy_grid.hpp"
@@ -21,8 +21,9 @@ namespace sim
             double width, height, resolution;
             
         public:
-            RandomMap(int, int, double, double, double,
-                      double, double, double, double, double);
+            RandomMap(int, int, 
+                      double, double, double, double, 
+                      double, double, double, double);
 
             cv::Point encode(double x, double y) const
             {
@@ -50,8 +51,11 @@ namespace sim
                 return cv::LineIterator(data, p1, p2);
             }
 
-            geometry_msgs::msg::Pose goal(int) const;
-            
-            nav_msgs::msg::OccupancyGrid* message(const std::string&);
+            nav_msgs::msg::OccupancyGrid* message(const std::string& frame)
+            {
+                msg.header.frame_id = frame; return &msg;
+            }
+
+            geometry_msgs::msg::Pose goal() const;
     };
 }

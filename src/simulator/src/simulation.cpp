@@ -112,8 +112,10 @@ Simulator::Simulator(std::string name): Node(name)
     );
     rnd = create_subscription<geometry_msgs::msg::PointStamped>(
         "/clicked_point", 1, 
-        [this](const geometry_msgs::msg::PointStamped::SharedPtr){
+        [this](const geometry_msgs::msg::PointStamped::SharedPtr msg){
             moving = !moving;
+            std::srand(msg->header.stamp.nanosec);
+            std::srand(0);
         }
     );
 
@@ -127,7 +129,7 @@ Simulator::Simulator(std::string name): Node(name)
     /* Detect target */
     ms = 1e3 / declare_parameter<double>("tracker.fps");
     detection = create_wall_timer(std::chrono::milliseconds(ms), [this](){
-        detector->publish(*env->detect(angle, range));
+        detector->publish(*env->detect(angle, range, get_logger()));
     });
 
     /* Random movement of the target */
@@ -135,7 +137,7 @@ Simulator::Simulator(std::string name): Node(name)
         if(moving && 1e-2 > std::fabs(env->target.vel.yaw) + hypot2(
             env->target.vel.x, env->target.vel.y
         ))
-            planner->plan(map->goal(rclcpp::Clock().now().seconds()));
+            planner->plan(map->goal());
     });
 
     /* Publish map */
@@ -162,6 +164,14 @@ void Simulator::step()
     transform.header.stamp = now();
     env->target.transform(target, broadcaster.get(), transform);
     env->tracker.transform(tracker, broadcaster.get(), transform);
+    
+    /* Print infomation */
+    RCLCPP_DEBUG(
+        get_logger(), 
+        "Target: %f, %f \nTracker: %f, %f, %f",
+        env->target.pose.x, env->target.pose.y,
+        env->tracker.pose.x, env->tracker.pose.y, env->tracker.pose.yaw
+    );
 
     /* Publish trajectories */
     trajectories[0]->publish(*env->target.trajectory(world));

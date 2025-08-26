@@ -1,5 +1,7 @@
 /* @author: YueLin */
 
+#include <rclcpp/node.hpp>
+
 #include "simulator/map.hpp"
 #include "simulator/robot.hpp"
 
@@ -34,7 +36,8 @@ namespace sim
             void step(Robot& robot, double dt) {robot.move(dt); clip(robot);}
             
         public:
-            geometry_msgs::msg::PoseStamped* detect(double, double);
+            geometry_msgs::msg::PoseStamped* detect(double, double,
+                                                    const rclcpp::Logger&);
 
             bool lost() const {return detection.pose.orientation.w < 0;}
 

@@ -29,7 +29,7 @@ namespace sim
 
     void Camera::update(RandomMap* map, Robot& robot, Robot& obstacle)
     {
-        cloud.clear();
+        cloud.clear();  
         const double r2 = obstacle.radius * obstacle.radius;
         const double w = map->width / 2, h = map->height / 2;
         for(double theta = -angle; theta <= angle; theta += deg2rad)
