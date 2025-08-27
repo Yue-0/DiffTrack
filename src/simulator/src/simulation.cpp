@@ -115,7 +115,6 @@ Simulator::Simulator(std::string name): Node(name)
         [this](const geometry_msgs::msg::PointStamped::SharedPtr msg){
             moving = !moving;
             std::srand(msg->header.stamp.nanosec);
-            std::srand(0);
         }
     );
 

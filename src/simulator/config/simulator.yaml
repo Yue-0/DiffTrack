@@ -19,7 +19,7 @@ simulation:
             name: "target"
             
             # For planning
-            max_vel: 1.5
+            max_vel: 1.7
             max_acc: 1.0
 
         tracker:
