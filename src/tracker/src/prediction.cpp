@@ -34,10 +34,17 @@ Predictor::Predictor(std::string name): Node(name)
 
 void Predictor::predict(const geometry_msgs::msg::PoseStamped::SharedPtr det)
 {
+    message.header.frame_id = det->header.frame_id;
+
     if(det->pose.orientation.w < 0)
     {
         predictor->reset(); 
-        // TODO: target lost >_<
+        if(!message.poses.empty())
+        {
+            message.poses.clear();
+            publishers[0]->publish(message);
+            publishers[1]->publish(message);
+        }
     }
     else
     {
@@ -49,7 +56,6 @@ void Predictor::predict(const geometry_msgs::msg::PoseStamped::SharedPtr det)
         predictor->predict();
 
         /* Publish Bezier curve */
-        message.header.frame_id = det->header.frame_id;
         message.poses.resize(bezier->n + 1);
         for(int p = 0; p <= bezier->n; p++)
         {
