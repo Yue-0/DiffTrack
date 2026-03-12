@@ -4,6 +4,17 @@
 
 __DiffTrack__ is an efficient and robust motion planning framework for differential robots to autonomously track targets.
 
+<table>
+    <tr>
+        <td style="text-align: center;">
+            <img src="gif/simulation1x0.gif" alt="simulation1" style="max-width: 100%" />
+        </td>
+        <td style="text-align: center;">
+            <img src="gif/simulation2x0.gif" alt="simulation2" style="max-width: 100%" />
+        </td>
+    </tr>
+</table>
+
 ## Quick Start
 
 In Ubuntu 24 & ROS-jazzy:
