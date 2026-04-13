@@ -7,10 +7,10 @@ __DiffTrack__ is an efficient and robust motion planning framework for different
 <table>
     <tr>
         <td style="text-align: center;">
-            <img src="gif/simulation1x0.gif" alt="simulation1" style="max-width: 100%" />
+            <img src="gif/simulation1x.gif" alt="simulation1" style="max-width: 100%" />
         </td>
         <td style="text-align: center;">
-            <img src="gif/simulation2x0.gif" alt="simulation2" style="max-width: 100%" />
+            <img src="gif/simulation2x.gif" alt="simulation2" style="max-width: 100%" />
         </td>
     </tr>
 </table>
